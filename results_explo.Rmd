@@ -1,0 +1,32 @@
+---
+title: "Untitled"
+author: "Francesco Migliaccio"
+date: "2025-02-04"
+output: html_document
+---
+
+```{r}
+net400_grouped_0.1 <- readRDS("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Bisection_Grid/Simulations/net400_100/MEAN_grouped_res_0.1.RDS")
+
+net200_grouped_0.1 <- readRDS("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Bisection_Grid/Simulations/net200_100/MEAN_grouped_res_0.1.RDS")
+net200_grouped_0.3 <- readRDS("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Bisection_Grid/Simulations/net200_100/MEAN_grouped_res_0.3.RDS")
+
+net100_grouped_0.1 <- readRDS("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Bisection_Grid/Simulations/net100_50/MEAN_grouped_res_0.1.RDS")
+net100_grouped_0.3 <- readRDS("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Bisection_Grid/Simulations/net100_50/MEAN_grouped_res_0.3.RDS")
+
+```
+
+```{r}
+time_400_grouped_0.1 <- readRDS(file = "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Bisection_Grid/Simulations/net400_100/grouped_time_0.1.RDS")
+  mean(sapply(time_400_grouped_0.1, function(x) x/60))
+old_time_400_grouped_0.1 <- readRDS("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/grouped_time_0.1.RDS.RDS")
+  mean(sapply(old_time_400_grouped_0.1, function(x) x/60))
+
+time_100_grouped_0.1 <- readRDS(file = "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Bisection_Grid/Simulations/net100_50/grouped_time_0.1.RDS")
+  mean(sapply(time_100_grouped_0.1, function(x) x/60))
+old_time_100_grouped_0.1 <- readRDS("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_100_50/grouped_time_0.1.RDS.RDS")
+  mean(sapply(old_time_100_grouped_0.1, function(x) x/60))
+  
+  
+```
+

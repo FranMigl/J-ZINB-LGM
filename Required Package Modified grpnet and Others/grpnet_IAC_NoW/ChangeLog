@@ -1,0 +1,43 @@
+
+Version 0.2
+
+   1) Bug Fix (penalty.factor)
+	* In ver 0.1 penalty.factor was not being passed to internal Fortran routines
+	* In the Fortran code, the penalty.factor was hard-coded as sqrt(grpsize)
+	* Now the penalty.factor argument is appropriately passed to internal code
+   2) Bug Fix (ridge solution)
+	* In ver 0.1 the ridge solution was computed at alpha = 0.001 for the first entry
+	* Now alpha = 0.001 is used to compute the lambda sequence but not the solution
+	* In ver 0.2 the ridge solution is computed at alpha = 0 (using lambda[1] from alpha = 0.001)
+   3) Expanded functionality of predict.grpnet and predict.cv.grpnet functions
+	* Previously only offered predictions of type "link", "response", and "class"
+	* Now offers 11 kinds of predictions (although some are not actually predictions)
+	* Additions include "terms", "importance", and 6 options for extracting coefficient info
+   4) Expanded functionality of plot.grpnet function
+	* Previously only offered plot of coefficient values (colored by group)
+	* Now offers three types: coef, norm, imp (obtained via predict.grpnet)
+	* The "type" option controls the type of plot that is produced
+   5) Improvements to grpnet and cv.grpnet outputs for multinomial responses
+	* Previously factor levels were internally replaced with y1,...,ym
+	* Resulted in coef names that differed from original factor levels
+	* Now original factor levels are retained and used for coef names
+   6) Improvements to the formula methods for grpnet and cv.grpnet
+	* Previously used model.matrix() to build (parametric) design matrix
+	* New argument: "use.rk" controls whether to use model.matrix() or rk.model.matrix()
+	* New default: "use.rk = TRUE" uses rk.model.matrix() to build (nonparametric) design matrix
+   7) Intercept is now accounted for in "group" that is output of grpnet (and cv.grpnet)
+	* Previously the returned "group" was the same regardless of the intercept
+	* Now the group vector contains "0" as the first element if an intercept was used
+	* Updated behavior is similar to behavior of model.matrix and rk.model.matrix
+   8) rk.model.matrix
+	* New function for forming model (design) matrices using the rk() function
+	* Designed to be a more flexible (nonparametric) alternative to model.matrix
+	* Interactions of any order are formed via the row.kronecker function
+   9) rk
+	* New function for forming a reproducing kernel (smoothing spline) basis
+	* Designed to be an improvement of the bs() function in the "stats" package
+	* Computes nominal, ordinal, and polynomial (linear, cubic, quintic) splines
+  10) row.kronecker
+	* New function for computing the row-wise Kronecker product between X and Y
+	* Note that X and Y are two matrices with the same number of rows
+	* Used by the rk.model.matrix() function to form bases for interaction effects

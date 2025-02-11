@@ -1,0 +1,477 @@
+---
+title: "park_net400_drop0.1"
+author: "Francesco Migliaccio"
+date: "2024-12-12"
+output: html_document
+---
+
+Here we have the ground truth
+```{r source net}
+net400 <- readRDS("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/net400.RDS")
+
+# Costruiamo la rete mediante il comando della libreria "netUtils"
+#net400 <- netUtils::sample_lfr(n = 400, mu = 0.01, average_degree = 20,
+                     #max_degree = 30, min_community = 18, max_community = 35)
+#saveRDS(net400, file = "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/net400.RDS")
+
+# Vogliamo che la rete abbia una sparsità di circa il 95%, cioè rispetto ad una fully connected deve avere solo il 5% di edges:
+
+# Per verificarlo prendiamo la matrice di adiacenza della rete, A:
+
+A = as.matrix(igraph::as_adjacency_matrix(net400))
+
+(netspar <- 1-sum(A!=0)/length(A))
+
+rafalib::imagemat(A!=0)
+# Osserviamo i degree dei nodi
+igraph::degree(net400)
+
+meandeg <- mean(igraph::degree(net400))
+
+```
+
+Generating data pre-zeroinflation:
+```{r loading generation}
+
+source("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Cold_Start_mu/R/Generating_Data_Functions.R")
+# A posteriori c'è un errore nella funzione k_net_datagen va cambiato net100 con net
+
+
+# Selecting five seeds, each one is the starting point to generate H matrices representing the ground truth
+SEED <- c(1926, 2, 7, 173, 8130)
+
+# Impostiamo k, nel paper h, numero di esperimenti cioè matrici
+k = 3
+# Le media dovranno essere k medie
+
+
+# Il numero di nodi è determinato dalla rete
+p = length(net400)
+
+
+k_mat <- list()
+for (i in 1:length(SEED)){
+  k_mat[[i]] <- k_net_datagen(net = net400, k = k, seed = SEED[i], n = 100, p = p, theta = 0.125, means = c(3,6,9))
+} # vedere più su per dettagli della funzione linea 97
+
+
+# Andiamo a vedere queste matrici, in particolare in nero abbiamo gli elementi diversi da zero, che aumentano all'aumentare delle medie
+rafalib::imagemat(k_mat[[1]][[1]]!=0)
+
+rafalib::imagemat(k_mat[[1]][[3]]!=0)
+
+```
+
+Let's take a quick look to the data:
+```{r explorative analysis, fig.width=20, fig.height=16}
+library(igraph)
+# Abbiamo k matrici di p colonne corrispondenti a p geni interconnessi
+
+dim(k_mat[[1]][[1]])
+
+# Visualizziamola in plot
+
+plot(net400,
+     vertex.size = 5,
+     vertex.label = NA) 
+
+# Verifichiamo i degree dei nodi della network
+
+paste("network degree:", igraph::degree(net400), sep = " ")
+
+paste("mean network degree:", mean(igraph::degree(net400)), sep = " ")
+
+hist(igraph::degree(net400), col = "azure3", main = "Node Degrees Freqency")
+
+# Salviamo le matrici in un oggetto Xs:
+
+Xs <- k_mat
+
+# for(i in 1:length(SEED)){
+#     
+#   # Andiamo a vedere il range della somma delle conte dei geni
+#   paste("Ranges di somme di conte per ogni gene in tutte le cellule: per le tre matrici rispettivamente:",
+#   range(colSums(Xs[[i]][[1]])), 
+#   range(colSums(Xs[[i]][[2]])),
+#   range(colSums(Xs[[i]][[3]])), sep = " ")
+#   
+#   
+#   hist(colSums(Xs[[i]][[1]]), col = "cornflowerblue", main = "Overall 'Genes' Abundance")
+#   hist(colSums(Xs[[i]][[2]]), col = "cornflowerblue", main = "Overall 'Genes' Abundance")
+#   hist(colSums(Xs[[i]][[3]]), col = "cornflowerblue", main = "Overall 'Genes' Abundance")
+#   
+#   # {
+#   # # Osserviamo come queste somme sono divise tra le cellule con altri istogrammi
+#   # 
+#   # histgenes <- lapply(k_mat, function(x){
+#   #   apply(x$X, 2, function(y){hist(y)})})
+#   # 
+#   # plot(histgenes[[1]][[sample(501,1)]], col = "red4")
+#   # plot(histgenes[[2]][[sample(501,1)]], col = "red4")
+#   # plot(histgenes[[3]][[sample(501,1)]], col = "red4")
+#   # }
+#   
+#   # Osserviamo adesso la "cell depth" ossia il numero di conte totali per riga
+#   paste("Ranges di somma di conte per ogni cellula attraverso le i geni cioè la depth: per le tre matrici rispettivamente:",
+#   range(rowSums(Xs[[i]][[1]])),
+#   range(rowSums(Xs[[i]][[2]])),
+#   range(rowSums(Xs[[i]][[3]])),
+#   sep = " ")
+#   
+#   hist(rowSums(Xs[[i]][[1]]), col = "darkolivegreen", main = "'Cells' Depth Frequency 1")
+#   hist(rowSums(Xs[[i]][[2]]), col = "darkolivegreen", main = "'Cells' Depth Frequency 2")
+#   hist(rowSums(Xs[[i]][[3]]), col = "darkolivegreen", main = "'Cells' Depth Frequency 3")
+# }
+```
+
+Inflating the data with zeroes
+```{r zero inflation}
+
+# ZERO INFLATION:
+# We Inject Zeroes with probability "dropout" 10%, 30% and 50% for each expression value equal to 5*source
+
+dropout <- c(0.1, 0.3, 0.5)
+sources = c(3,6,9) # sources means
+
+Xs_0.1 <- list()
+Xs_0.3 <- list()
+Xs_0.5 <- list()
+
+for (i in 1:length(SEED)){
+
+  Xs_0.1[[i]] <- lapply(1:length(Xs[[i]]), function(j){Dropout_Injection_meandeg(Xs[[i]][[j]], dropout[1], sources[j], seed = 1926, meandeg = meandeg)})
+
+  Xs_0.3[[i]] <- lapply(1:length(Xs[[i]]), function(j){Dropout_Injection_meandeg(Xs[[i]][[j]], dropout[2], sources[j], seed = 1926, meandeg = meandeg)})
+
+  Xs_0.5[[i]] <- lapply(1:length(Xs[[i]]), function(j){Dropout_Injection_meandeg(Xs[[i]][[j]], dropout[3], sources[j], seed = 1926, meandeg = meandeg)})
+
+}
+
+
+# dropout originale e dopo iniezioni
+
+nodrop <- list()
+drop1 <- list()
+drop3 <- list()
+drop5 <- list()
+dropdiff1 <- list()
+dropdiff3 <- list()
+dropdiff5 <- list()
+for(i in 1:length(SEED)){
+  
+  (nodrop[[i]] <- sapply(Xs[[i]], calculate_dropout))
+  (drop1[[i]] <- sapply(Xs_0.1[[i]], calculate_dropout))
+  (drop3[[i]] <- sapply(Xs_0.3[[i]], calculate_dropout))
+  (drop5[[i]] <- sapply(Xs_0.5[[i]], calculate_dropout))
+  
+  (dropdiff1[[i]] <- drop1[[i]] - nodrop[[i]]) 
+  (dropdiff3[[i]] <- drop3[[i]] - nodrop[[i]]) 
+  (dropdiff5[[i]] <- drop5[[i]] - nodrop[[i]]) 
+}
+
+```
+
+
+```{r park late}
+# Definiamo una funzione rapida per chiamare la seconda parametrizzazione del metodo di Park et al.
+
+ docall_NBII_AND <- function(x){ZILGM::zilgm(X = x, nlambda = 50, family = "NBII",
+                              update_type = "IRLS", do_boot = FALSE, boot_num = 30,
+                              beta = 0.05, sym = "AND", nCores = numWorkers)
+ }
+
+numWorkers <- parallel::detectCores(logical = TRUE)-1
+
+running_time <- list()
+Park_net400_late <- list()
+
+for (i in seq_along(Xs_0.3)) {
+  running_time[[i]] <- list()
+  Park_net400_late[[i]] <- list()
+  
+  for (j in seq_along(Xs_0.3[[i]])) {
+        running_time[[i]][[j]] <- system.time({
+          Park_net400_late[[i]][[j]] <- docall_NBII_AND(Xs_0.3[[i]][[j]])
+      })[3]
+    }
+}
+
+saveRDS(running_time, "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/Park_time_late_0.3.RDS")
+
+saveRDS(Park_net400_late, "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/Park_late_res_0.3.RDS")
+```
+
+```{r late fusion results}
+source("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Cold_Start_mu/R/Aux_Functions.R")
+late_fused_networks <- vector("list",50)
+
+List <- Park_net400_late[[5]]
+networks <- list()
+
+for(l in 1:length(List[[1]]$lambda)){
+  networks <- lapply(List, function(j) j$network[[l]])
+  fused_network <- Matrix(0, nrow = 400, ncol = 400, sparse = TRUE)
+  for(p in 1:400){
+    for(q in 1:400){
+      votes <- sum(sapply(networks, function(net) net[p,q]!=0))
+      if(votes >=2){
+        fused_network[p,q] <- 1
+      }
+    }
+  }
+  late_fused_networks[[l]] <- fused_network
+}
+
+#late_networks <- list()
+late_networks[[5]] <- late_fused_networks
+
+saveRDS(late_networks, "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/late_nets_0.3.RDS")
+
+results_Park_late_net400_0.3 <- lapply(late_networks, function(i){
+      data.frame(t(sapply(i, function(x) metrics(net400,x))))
+  })
+
+meanlambdas <- lapply(Park_net400_late, function(o)lapply(o, function(i) i$lambda))
+for(i in 1:length(meanlambdas)){meanlambdas[[i]] <- (meanlambdas[[i]][[1]]+meanlambdas[[i]][[2]]+ meanlambdas[[1]][[3]])/3}
+                      
+for(i in 1:length(results_Park_late_net400_0.3)){
+  results_Park_late_net400_0.3[[i]]$Lambda <- meanlambdas[[i]]
+  results_Park_late_net400_0.3[[i]]$J <- results_Park_late_net400_0.3[[i]]$TPR - results_Park_late_net400_0.3[[i]]$FPR
+}
+
+mean_results_Park_late_net400_0.3 <- Reduce("+", results_Park_late_net400_0.3)
+mean_results_Park_late_net400_0.3 <- mean_results_Park_late_net400_0.3/length(results_Park_late_net400_0.3)
+
+source("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Cold_Start_mu/R/Graphical_Functions.R")
+
+pdf(file = "//home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/Plots/MEAN_net400_PARK_late_AND_0.3.pdf", width = 15, height = 15)
+
+  ggpubr::ggarrange(roc(mean_results_Park_late_net400_0.3),
+          prc(mean_results_Park_late_net400_0.3),
+          Accuracy(mean_results_Park_late_net400_0.3),
+          F1_stat(mean_results_Park_late_net400_0.3),
+          labels = c("A", "B", "C", "D"),
+          ncol = 2, nrow = 2)
+
+dev.off()
+
+```
+
+```{r park early}
+# Now the results for the early:
+
+Xs_0.3_early <- lapply(Xs_0.3, function(x) do.call(rbind,x))
+running_time_early <- list()
+Park_net400_early <- list()
+for(i in 1:length(Xs_0.3_early)){
+  running_time_early[[i]] <- system.time({
+    Park_net400_early[[i]] <- docall_NBII_AND(Xs_0.3_early[[i]])
+  })[3]
+}
+
+saveRDS(running_time_early, file = "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/Park_time_early_0.3.RDS")
+saveRDS(Park_net400_early, file = "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/Park_early_res_0.3.RDS")
+
+results_Park_early_net400_0.3 <- lapply(Park_net400_early, function(i){
+      data.frame(t(apply(i$coef_network, 3, function(x) metrics(net400,x))))
+  })
+
+for(i in 1:length(results_Park_early_net400_0.3)){
+  results_Park_early_net400_0.3[[i]]$Lambda <- Park_net400_early[[i]]$lambda
+  results_Park_early_net400_0.3[[i]]$J <- results_Park_early_net400_0.3[[i]]$TPR - results_Park_early_net400_0.3[[i]]$FPR
+}
+
+mean_results_Park_early_net400_0.3 <- Reduce("+", results_Park_early_net400_0.3)
+mean_results_Park_early_net400_0.3 <- mean_results_Park_early_net400_0.3/length(results_Park_early_net400_0.3)
+
+pdf(file = "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/Plots/MEAN_net400_PARK_early_AND_0.3.pdf", width = 15, height = 15)
+
+  ggpubr::ggarrange(roc(mean_results_Park_early_net400_0.3),
+          prc(mean_results_Park_early_net400_0.3),
+          Accuracy(mean_results_Park_early_net400_0.3),
+          F1_stat(mean_results_Park_early_net400_0.3),
+          labels = c("A", "B", "C", "D"),
+          ncol = 2, nrow = 2)
+
+dev.off()
+
+```
+
+
+```{r early integration with our method}
+# proviamo prima l'active cold start: cioè senza warm start ma con riduzione dimensionalità
+source("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Cold_Start_mu/R/Main_Functions.R")
+
+# abbiamo anche inserito nell'output i warnings e la itermat
+available = parallel::detectCores(logical = FALSE)
+ncores <- available - 1 
+
+
+Xs_0.3_early <- lapply(Xs_0.3, function(x) do.call(rbind,x))
+# Per far funzionare il nostro metodo dobbiamo fornire alla funzione comunque una lista anche se di un solo elemento quando si ha una sola matrice
+Xs_0.3_early_list <- lapply(Xs_0.3_early, list)
+
+# Qui salveremo i tempi impiegati da ciascuna realizzazione
+running_time <- list()
+# Qui l'output
+net400_results <- list()
+
+for (i in 1:length(Xs_0.3)){
+  running_time[[i]] <- system.time({
+    net400_results[[i]] <- zinb_LGM_grp(Xs_0.3_early_list[[i]], sym = "AND", nCores = ncores, verbose = 1)
+  })[3]
+}
+
+mean(sapply(running_time, function(x) x/60))
+
+saveRDS(net400_results, file = "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/grouped_early_res_0.3.RDS")
+saveRDS(running_time, file = "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/grouped_early_time_0.3.RDS.RDS")
+
+```
+
+```{r results}
+
+nlambda = 50
+
+metriche_res <-  list()
+
+for (l in 1:length(SEED)){
+metriche_res[[l]] <- lapply(1:nlambda, function(i){
+  metrics(net400, net400_results[[l]]$network[[i]])
+})
+metriche_res[[l]] <- data.frame(do.call(rbind, metriche_res[[l]]))
+}
+
+# Let's add the column relative to lambda values and to the Youden J statistic
+
+for(i in 1:length(metriche_res)){
+  metriche_res[[i]]$Lambda <- net400_results[[i]]$lambda
+  metriche_res[[i]]$J <- metriche_res[[i]]$TPR - metriche_res[[i]]$FPR
+}
+
+
+mean_metriche_res <- Reduce("+", metriche_res)
+mean_metriche_res <- mean_metriche_res/length(metriche_res)
+
+saveRDS(metriche_res, file = "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/MEAN_grouped_early_res_0.3.RDS")
+
+```
+
+
+Here we plot the results:
+```{r Plots}
+for(i in 1:length(SEED)){
+pdf(file = paste0("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/Plots/Single_Results/grouped_early_0.3_",i,".pdf"), width = 15, height = 15)
+
+print(
+  ggpubr::ggarrange(roc(metriche_res[[i]]),
+          prc(metriche_res[[i]]),
+          Accuracy(metriche_res[[i]]),
+          F1_stat(metriche_res[[i]]),
+          labels = c("A", "B", "C", "D"),
+          ncol = 2, nrow = 2)
+)
+
+
+dev.off()
+}
+
+pdf(file = "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/Plots/MEAN_grouped_early_0.3.pdf", width = 15, height = 15)
+
+  ggpubr::ggarrange(roc(mean_metriche_res),
+          prc(mean_metriche_res),
+          Accuracy(mean_metriche_res),
+          F1_stat(mean_metriche_res),
+          labels = c("A", "B", "C", "D"),
+          ncol = 2, nrow = 2)
+
+dev.off()
+
+```
+
+
+```{r straightforward grouped method}
+
+# abbiamo anche inserito nell'output i warnings e la itermat
+available = parallel::detectCores(logical = FALSE)
+ncores <- available - 1 
+
+
+# Qui salveremo i tempi impiegati da ciascuna realizzazione
+running_time <- list()
+# Qui l'output
+net400_results <- list()
+
+for (i in 1:length(Xs_0.3)){
+  running_time[[i]] <- system.time({
+    net400_results[[i]] <- zinb_LGM_grp(Xs_0.3[[i]], sym = "AND", nCores = ncores, verbose = 1)
+  })[3]
+}
+
+mean(sapply(running_time, function(x) x/60))
+
+saveRDS(net400_results, file = "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/grouped_res_0.3.RDS")
+saveRDS(running_time, file = "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/grouped_time_0.3.RDS.RDS")
+
+```
+
+```{r results}
+
+nlambda = 50
+
+metriche_res <-  list()
+
+for (l in 1:length(SEED)){
+metriche_res[[l]] <- lapply(1:nlambda, function(i){
+  metrics(net400, net400_results[[l]]$network[[i]])
+})
+metriche_res[[l]] <- data.frame(do.call(rbind, metriche_res[[l]]))
+}
+
+# Let's add the column relative to lambda values and to the Youden J statistic
+
+for(i in 1:length(metriche_res)){
+  metriche_res[[i]]$Lambda <- net400_results[[i]]$lambda
+  metriche_res[[i]]$J <- metriche_res[[i]]$TPR - metriche_res[[i]]$FPR
+}
+
+
+mean_metriche_res <- Reduce("+", metriche_res)
+mean_metriche_res <- mean_metriche_res/length(metriche_res)
+
+saveRDS(metriche_res, file = "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/MEAN_grouped_res_0.3.RDS")
+
+```
+
+
+Here we plot the results:
+```{r Plots}
+for(i in 1:length(SEED)){
+pdf(file = paste0("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/Plots/Single_Results/grouped_0.3_",i,".pdf"), width = 15, height = 15)
+
+print(
+  ggpubr::ggarrange(roc(metriche_res[[i]]),
+          prc(metriche_res[[i]]),
+          Accuracy(metriche_res[[i]]),
+          F1_stat(metriche_res[[i]]),
+          labels = c("A", "B", "C", "D"),
+          ncol = 2, nrow = 2)
+)
+
+
+dev.off()
+}
+
+pdf(file = "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/Plots/MEAN_grouped_0.3.pdf", width = 15, height = 15)
+
+  ggpubr::ggarrange(roc(mean_metriche_res),
+          prc(mean_metriche_res),
+          Accuracy(mean_metriche_res),
+          F1_stat(mean_metriche_res),
+          labels = c("A", "B", "C", "D"),
+          ncol = 2, nrow = 2)
+
+dev.off()
+
+```
+

@@ -1,0 +1,314 @@
+---
+title: "ZINB_GLGM"
+author: "Francesco Migliaccio"
+date: "2024-11-04"
+output: html_document
+---
+
+Here we have the ground truth
+```{r source net}
+
+net100 <- readRDS("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Packages/ZINB_GLGM/net100.RDS")
+
+# La rete è stata costruita mediante il comando della libreria "netUtils"
+# net100 <- sample_lfr(n = 100, mu = 0.01, average_degree = 5,
+                     #max_degree = 10, min_community = 5, max_community = 20)
+
+```
+
+Generating data pre-zeroinflation:
+```{r loading generation}
+
+source("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Packages/ZINB_GLGM/R/Generating_Data_Functions.R")
+
+# Selecting five seeds, each one is the starting point to generate H matrices representing the ground truth
+SEED <- c(1926, 2, 7, 173, 8130)
+
+# Impostiamo k, nel paper h, numero di esperimenti cioè matrici
+k = 3
+# Le media dovranno essere k medie
+
+
+# Il numero di nodi è determinato dalla rete
+p = length(net100)
+
+
+k_mat <- list()
+for (i in 1:length(SEED)){
+  k_mat[[i]] <- k_net_datagen(net = net100, k = k, seed = SEED[i], n = 80, p = p, theta = 0.125, means = c(3,6,9))
+} # vedere più su per dettagli della funzione linea 97
+
+
+# Vogliamo che la rete abbia una sparsità di circa il 95%, cioè rispetto ad una fully connected deve avere solo il 5% di edges:
+
+
+# Per verificarlo prendiamo la matrice di adiacenza della rete, A:
+
+A = as.matrix(igraph::as_adjacency_matrix(net100))
+rafalib::imagemat(A!=0)
+(netspar <- 1-sum(A!=0)/length(A))
+
+# Osserviamo i degree dei nodi
+igraph::degree(net100)
+
+
+# Andiamo a vedere queste matrici, in particolare in nero abbiamo gli elementi diversi da zero, che aumentano all'aumentare delle medie
+rafalib::imagemat(k_mat[[1]][[1]]!=0)
+
+rafalib::imagemat(k_mat[[1]][[3]]!=0)
+
+```
+
+Let's take a quick look to the data:
+```{r explorative analysis, fig.width=20, fig.height=16}
+library(igraph)
+# Abbiamo k matrici di p colonne corrispondenti a p geni interconnessi
+
+dim(k_mat[[1]][[1]])
+
+# Visualizziamola in plot
+
+plot(net100,
+     vertex.size = 5,
+     vertex.label = NA) 
+
+# Verifichiamo i degree dei nodi della network
+
+paste("network degree:", igraph::degree(net100), sep = " ")
+
+paste("mean network degree:", mean(igraph::degree(net100)), sep = " ")
+
+hist(igraph::degree(net100), col = "azure3", main = "Node Degrees Freqency")
+
+# Salviamo le matrici in un oggetto Xs:
+
+Xs <- k_mat
+
+# for(i in 1:length(SEED)){
+#     
+#   # Andiamo a vedere il range della somma delle conte dei geni
+#   paste("Ranges di somme di conte per ogni gene in tutte le cellule: per le tre matrici rispettivamente:",
+#   range(colSums(Xs[[i]][[1]])), 
+#   range(colSums(Xs[[i]][[2]])),
+#   range(colSums(Xs[[i]][[3]])), sep = " ")
+#   
+#   
+#   hist(colSums(Xs[[i]][[1]]), col = "cornflowerblue", main = "Overall 'Genes' Abundance")
+#   hist(colSums(Xs[[i]][[2]]), col = "cornflowerblue", main = "Overall 'Genes' Abundance")
+#   hist(colSums(Xs[[i]][[3]]), col = "cornflowerblue", main = "Overall 'Genes' Abundance")
+#   
+#   # {
+#   # # Osserviamo come queste somme sono divise tra le cellule con altri istogrammi
+#   # 
+#   # histgenes <- lapply(k_mat, function(x){
+#   #   apply(x$X, 2, function(y){hist(y)})})
+#   # 
+#   # plot(histgenes[[1]][[sample(501,1)]], col = "red4")
+#   # plot(histgenes[[2]][[sample(501,1)]], col = "red4")
+#   # plot(histgenes[[3]][[sample(501,1)]], col = "red4")
+#   # }
+#   
+#   # Osserviamo adesso la "cell depth" ossia il numero di conte totali per riga
+#   paste("Ranges di somma di conte per ogni cellula attraverso le i geni cioè la depth: per le tre matrici rispettivamente:",
+#   range(rowSums(Xs[[i]][[1]])),
+#   range(rowSums(Xs[[i]][[2]])),
+#   range(rowSums(Xs[[i]][[3]])),
+#   sep = " ")
+#   
+#   hist(rowSums(Xs[[i]][[1]]), col = "darkolivegreen", main = "'Cells' Depth Frequency 1")
+#   hist(rowSums(Xs[[i]][[2]]), col = "darkolivegreen", main = "'Cells' Depth Frequency 2")
+#   hist(rowSums(Xs[[i]][[3]]), col = "darkolivegreen", main = "'Cells' Depth Frequency 3")
+# }
+```
+
+Inflating the data with zeroes
+```{r zero inflation}
+
+# ZERO INFLATION:
+# We Inject Zeroes with probability "dropout" 10%, 30% and 50% for each expression value equal to 5*source
+
+dropout <- c(0.1, 0.3, 0.5)
+sources = c(3,6,9) # sources means
+
+Xs_0.1 <- list()
+Xs_0.3 <- list()
+Xs_0.5 <- list()
+
+# Andiamo ad applicare la zero inflation
+for (i in 1:length(SEED)){
+ 
+  Xs_0.1[[i]] <- lapply(1:length(Xs[[i]]), function(j){Dropout_Injection(Xs[[i]][[j]], dropout[1], sources[j], seed = 1926)})
+  
+  Xs_0.3[[i]] <- lapply(1:length(Xs[[i]]), function(j){Dropout_Injection(Xs[[i]][[j]], dropout[2], sources[j], seed = 1926)})
+  
+  Xs_0.5[[i]] <- lapply(1:length(Xs[[i]]), function(j){Dropout_Injection(Xs[[i]][[j]], dropout[3], sources[j], seed = 1926)})
+
+}
+  
+# dropout originale e dopo iniezioni
+
+nodrop <- list()
+drop1 <- list()
+drop3 <- list()
+drop5 <- list()
+dropdiff1 <- list()
+dropdiff3 <- list()
+dropdiff5 <- list()
+for(i in 1:length(SEED)){
+  
+  (nodrop[[i]] <- sapply(Xs[[i]], calculate_dropout))
+  (drop1[[i]] <- sapply(Xs_0.1[[i]], calculate_dropout))
+  (drop3[[i]] <- sapply(Xs_0.3[[i]], calculate_dropout))
+  (drop5[[i]] <- sapply(Xs_0.5[[i]], calculate_dropout))
+  
+  (dropdiff1[[i]] <- drop1[[i]] - nodrop[[i]]) 
+  (dropdiff3[[i]] <- drop3[[i]] - nodrop[[i]]) 
+  (dropdiff5[[i]] <- drop5[[i]] - nodrop[[i]]) 
+}
+
+```
+This is the end of the data generation
+
+Now we run the method:
+```{r time and results}
+source("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Packages/ZINB_GLGM/R/Main_Functions.R")
+source("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Packages/ZINB_GLGM/R/Aux_Functions.R")
+source("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Packages/ZINB_GLGM/R/Graphical_Functions.R")
+
+available = parallel::detectCores(logical = FALSE)
+ncores <- available - 1 
+
+
+
+# Qui salveremo i tempi impiegati da ciascuna realizzazione
+running_time <- list()
+# Qui l'output
+net100_results <- list()
+
+for (i in 1:length(Xs_0.3)){
+  running_time[[i]] <- system.time({
+    net100_results[[i]] <- zinb_LGM_grp(Xs_0.3[[i]], sym = "AND", nCores = ncores, verbose = 1)
+  })[3]
+}
+
+mean(sapply(running_time, function(x) x/60))
+
+# Loading Franceso Cecere data and network
+count_matrices <- readRDS("~/Desktop/Link to Francesco/PhD Project/Scripts/Packages/ZINB_GLGM/count_matrices.RDS")
+
+adjacency_matrix <- read.csv("~/Desktop/Link to Francesco/PhD Project/Scripts/Packages/ZINB_GLGM/adjacency_matrix.csv", row.names=1)
+
+cecenet <- graph_from_adjacency_matrix(as.matrix(adjacency_matrix), mode = "undirected", diag = FALSE)
+
+count_matrices <-lapply(count_matrices, function(x) as(x, "sparseMatrix"))
+
+runtime <- system.time(ceceresults <- zinb_LGM_grp(count_matrices, sym = "AND", nCores = ncores))
+
+lambda <- ceceresults$lambda
+
+results <- ceceresults
+
+runtime <- system.time(ceceresults <- zinb_LGM_grp(count_matrices, sym = "AND", nCores = ncores, lambda = lambda[2]))
+
+
+
+```
+
+
+```{r results}
+
+nlambda = 1
+
+metriche_cecere <- lapply(1:nlambda, function(i){
+  metrics(cecenet, ceceresults$network[[i]])
+  })
+metriche_cecere <- data.frame(do.call(rbind, metriche_cecere))
+
+# Let's add the column relative to lambda values and to the Youden J statistic
+
+  metriche_cecere$Lambda <- ceceresults$lambda
+  metriche_cecere$J <- metriche_cecere$TPR - metriche_cecere$FPR
+  
+  break1 <- metriche_cecere
+  
+```
+
+
+```{r results}
+pdf(file = "/home/negus/Pictures/Cecere_Results/Risultati.pdf", width = 15, height = 15)
+
+  ggpubr::ggarrange(roc(metriche_cecere),
+          prc(metriche_cecere),
+          Accuracy(metriche_cecere),
+          F1_stat(metriche_cecere),
+          labels = c("A", "B", "C", "D"),
+          ncol = 2, nrow = 2)
+
+dev.off()
+
+
+
+
+
+```
+
+And here we explore the results
+```{r results}
+
+nlambda = 50
+
+metriche_res <-  list()
+
+for (l in 1:length(SEED)){
+metriche_res[[l]] <- lapply(1:nlambda, function(i){
+  metrics(net100, net100_results[[l]]$network[[i]])
+})
+metriche_res[[l]] <- data.frame(do.call(rbind, metriche_res[[l]]))
+}
+
+# Let's add the column relative to lambda values and to the Youden J statistic
+
+for(i in 1:length(metriche_res)){
+  metriche_res[[i]]$Lambda <- net100_results[[i]]$lambda
+  metriche_res[[i]]$J <- metriche_res[[i]]$TPR - metriche_res[[i]]$FPR
+}
+
+
+mean_metriche_res <- Reduce("+", metriche_res)
+mean_metriche_res <- mean_metriche_res/length(metriche_res)
+
+saveRDS(metriche_res, file = "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Semi_final_ver/metriche_res_newmeans.RDS")
+
+```
+
+
+Here we plot the results:
+```{r Plots}
+for(i in 1:length(SEED)){
+pdf(file = paste0("/home/negus/Pictures/res_Oct_24/Single_Results/newmeans_net100_AND_",i,".pdf"), width = 15, height = 15)
+
+print(
+  ggpubr::ggarrange(roc(metriche_res[[i]]),
+          prc(metriche_res[[i]]),
+          Accuracy(metriche_res[[i]]),
+          F1_stat(metriche_res[[i]]),
+          labels = c("A", "B", "C", "D"),
+          ncol = 2, nrow = 2)
+)
+
+
+dev.off()
+}
+
+pdf(file = "/home/negus/Pictures/res_Oct_24/newmeans_net100_AND.pdf", width = 15, height = 15)
+
+  ggpubr::ggarrange(roc(metriche_res[[i]]),
+          prc(metriche_res[[i]]),
+          Accuracy(metriche_res[[i]]),
+          F1_stat(metriche_res[[i]]),
+          labels = c("A", "B", "C", "D"),
+          ncol = 2, nrow = 2)
+
+dev.off()
+
+```

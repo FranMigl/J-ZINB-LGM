@@ -1,0 +1,206 @@
+---
+title: "Real_Data"
+author: "Francesco Migliaccio"
+date: "2025-01-27"
+output: html_document
+---
+We have no ground truth, only real data
+
+```{r dataload}
+
+offset1 <- readRDS("/home/negus/Desktop/Tesi/Real_Data/offset_sample5.RDS")
+offset2 <- readRDS("/home/negus/Desktop/Tesi/Real_Data/offset_sample18.RDS")
+offset <- as.numeric(log(c(offset1,offset2)))
+Xs <- readRDS("/home/negus/Desktop/Tesi/Real_Data/MouseData.rds")
+
+apply(Xs[[1]],2,summary)
+# Andiamo a vedere queste matrici, in particolare in nero abbiamo gli elementi diversi da zero
+rafalib::imagemat(Xs[[1]]!=0)
+
+rafalib::imagemat(Xs[[2]]!=0)
+
+```
+
+```{r straightforward grouped method}
+
+source("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Bisection_Grid/R/Aux_Functions.R")
+source("/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Bisection_Grid/R/Main_Functions.R")
+# abbiamo anche inserito nell'output i warnings e la itermat
+available = parallel::detectCores(logical = FALSE)
+ncores <- available - 1 
+
+# Qui salveremo i tempi impiegati da ciascuna realizzazione
+running_time <- list()
+# Qui l'output
+mouse_results <- list()
+
+# Selezioniamo da qui il lambda? 21/01/25
+Park_net400 <- readRDS(file = "/home/negus/Desktop/Link to Francesco/PhD Project/Scripts/Simul_400_100/grouped_res_0.1.RDS")
+# Oppure da qui
+lambdas <- readRDS("/home/negus/Desktop/Tesi/Real_Data/Park_early_res.RDS")$lambda
+# Combinando i primi elementi di entrambi:
+lambda_comb <- c(sort(lambdas)[1],Park_net400[[1]]$lambda[1]*10^-1)
+
+
+
+running_time <- system.time({
+     mouse_results <- zinb_LGM_grp(Xs, sym = "AND", nCores = ncores, verbose = 1, offset = offset)})[3]
+
+
+   
+nOfEdge = unlist(lapply(mouse_results$network, function(x){igraph::gsize(igraph::graph_from_adjacency_matrix(as(x, "CsparseMatrix"), mode = "undirected"))}))
+
+mean(sapply(running_time, function(x) x/60))
+
+
+
+# saveRDS(net, "/home/negus/Desktop/Tesi/Real_Data/results.RDS")
+net <- readRDS("/home/negus/Desktop/Tesi/Real_Data/results.RDS")
+
+```
+
+
+Occam Razor 
+
+```{r}
+
+library(splines)
+library(ggplot2)
+
+# Dati (sostituisci con i tuoi valori)
+lambda_vals <- mouse_results$lambda
+edge_vals <- nOfEdge
+
+# Interpolazione della curva usando spline
+spline_fit <- smooth.spline(lambda_vals, edge_vals, spar = 0.6)
+
+# Generazione di un intervallo continuo per λ
+lambda_fine <- seq(min(lambda_vals), max(lambda_vals), length.out = 500)
+
+# Predizione della curva e delle derivate
+curve_vals <- predict(spline_fit, lambda_fine)$y
+first_derivative <- predict(spline_fit, lambda_fine, deriv = 1)$y
+second_derivative <- predict(spline_fit, lambda_fine, deriv = 2)$y
+
+# Penalizzazione della complessità (ad esempio, una funzione lineare crescente con λ)
+complexity_penalty <- lambda_fine  # Penalizzazione proporzionale a λ
+
+# Funzione obiettivo: curvatura penalizzata dalla complessità
+objective_function <- second_derivative / (1 + complexity_penalty)
+
+# Trova il valore ottimale di λ (massimizza la funzione obiettivo)
+optimal_index <- which.max(objective_function)
+optimal_lambda <- lambda_fine[optimal_index]
+
+# Visualizzazione dei risultati con ggplot2
+df_plot <- data.frame(
+  lambda = lambda_fine,
+  curve = curve_vals,
+  second_derivative = second_derivative,
+  objective_function = objective_function
+)
+
+ggplot() +
+  geom_point(data = data.frame(lambda = lambda_vals, edges = edge_vals),
+             aes(x = lambda, y = edges), color = "blue", size = 2, label = "Data points") +
+  geom_line(data = df_plot, aes(x = lambda, y = curve), color = "black", size = 1, label = "Fitted Curve") +
+  geom_line(data = df_plot, aes(x = lambda, y = second_derivative), color = "green", size = 1, linetype = "dashed", label = "Second Derivative") +
+  geom_line(data = df_plot, aes(x = lambda, y = objective_function), color = "red", size = 1, label = "Objective Function") +
+  geom_vline(xintercept = optimal_lambda, color = "purple", linetype = "dotted", size = 1) +
+  labs(title = "Optimal λ Selection with Occam's Razor",
+       x = "Lambda",
+       y = "Value",
+       caption = sprintf("Optimal λ = %.3f", optimal_lambda)) +
+  theme_minimal()
+
+# Output del valore ottimale
+cat(sprintf("Optimal λ based on Occam's Razor: %.3f\n", optimal_lambda))
+
+
+```
+
+Con ramo d'iperbole:
+```{r}
+# Librerie necessarie
+library(ggplot2)
+library(minpack.lm)  # Per il fitting non lineare
+
+# Dati (sostituisci con i tuoi valori)
+lambda_vals <- mouse_results$lambda
+edge_vals <- nOfEdge
+
+# Modello iperbolico: y = a / (x + b) + c
+hyperbolic_model <- function(params, x) {
+  a <- params[1]
+  b <- params[2]
+  c <- params[3]
+  a / (x + b) + c
+}
+
+# Funzione obiettivo per il fitting
+objective <- function(params) {
+  sum((edge_vals - hyperbolic_model(params, lambda_vals))^2)
+}
+
+# Stima iniziale dei parametri
+init_params <- c(a = diff(range(nOfEdge)), b = 0.5, c = min(nOfEdge))
+
+# Fit del modello non lineare
+fit <- nls.lm(par = init_params, fn = objective)
+
+# Estrai i parametri stimati
+params <- coef(fit)
+a <- params[1]
+b <- params[2]
+c <- params[3]
+
+# Calcolo della curva e delle derivate
+lambda_fine <- seq(min(lambda_vals), max(lambda_vals), length.out = 500)
+curve_vals <- hyperbolic_model(params, lambda_fine)
+
+# Derivata prima e seconda
+first_derivative <- -a / (lambda_fine + b)^2
+second_derivative <- 2 * a / (lambda_fine + b)^3
+
+# Penalizzazione della complessità
+complexity_penalty <- lambda_fine  # Penalizzazione lineare
+
+# Funzione obiettivo con Occam's Razor
+objective_function <- second_derivative / (1 + complexity_penalty)
+
+# Trova il massimo della funzione obiettivo
+optimal_index <- which.max(objective_function)
+optimal_lambda <- lambda_fine[optimal_index]
+
+# Plot dei risultati
+df_plot <- data.frame(
+  lambda = lambda_fine,
+  curve = curve_vals,
+  second_derivative = second_derivative,
+  objective_function = objective_function
+)
+
+ggplot() +
+  geom_point(data = data.frame(lambda = lambda_vals, edges = edge_vals),
+             aes(x = lambda, y = edges), color = "blue", size = 2, label = "Data points") +
+  geom_line(data = df_plot, aes(x = lambda, y = curve), color = "black", size = 1, label = "Fitted Curve") +
+  geom_line(data = df_plot, aes(x = lambda, y = second_derivative), color = "green", size = 1, linetype = "dashed", label = "Second Derivative") +
+  geom_line(data = df_plot, aes(x = lambda, y = objective_function), color = "red", size = 1, label = "Objective Function") +
+  geom_vline(xintercept = optimal_lambda, color = "purple", linetype = "dotted", size = 1) +
+  labs(title = "Optimal λ Selection with Hyperbolic Fit and Occam's Razor",
+       x = "Lambda",
+       y = "Value",
+       caption = sprintf("Optimal λ = %.3f", optimal_lambda)) +
+  theme_minimal()
+
+# Output del valore ottimale
+cat(sprintf("Optimal λ based on Occam's Razor: %.3f\n", optimal_lambda))
+```
+
+```{r}
+# a = diff(range(nOfEdge)), b = 0.5, c = min(nOfEdge)
+
+```
+
+
+
