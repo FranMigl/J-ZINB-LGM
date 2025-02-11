@@ -24,6 +24,7 @@ Generetwork_NB <- function(net, # ground truth
                             zprob = zerop),
               nrow = n,
               ncol = m) 
+  
   E <- matrix(emdbook::rzinbinom(n = n*p, mu = 0, size = 1e8, zprob = zerop), nrow = n, ncol = p)
   
   # We now got to build matrix B, this will be made by an identity matrix p times p, a permutation matrix and the vectorization of the upper triangular matrix of the graph adjacency matrix
