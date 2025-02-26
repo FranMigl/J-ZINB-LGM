@@ -73,10 +73,21 @@ zinb_LGM_grp <- function(
     # Adjust lambda_max
     repeat {
       res <- adjust_lambda(lambda_max)
-      if (res$edges >= (maxcon / 100)) break
-      lambda_max <- lambda_max / 2
+      
+      if (res$edges >= (maxcon / 100) && res$edges <= (5 * maxcon / 100)) break  # stop in desired range
+      
+      if (res$edges < (maxcon / 100)) {
+        lambda_max <- lambda_max / 2  # halve lambda_max to have at least 1% total edges
+      }
+      
+      if (res$edges > (5 * maxcon / 100)) {
+        lambda_max <- lambda_max * 2  # double lambda_max to have less than 5% total edges
+        break  # exit the loop as we're probably close to the desired connectivity for lambda max
+      }
     }
+    
     lambda_min <- lambda_max * ratio
+    
     # Adjust lambda_min
     repeat {
       res <- adjust_lambda(lambda_min)
